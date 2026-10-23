@@ -37,9 +37,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        id: setup-android
-        uses: android-actions/setup-android@v3
+      # The ubuntu-latest image already ships a full Android SDK; using it
+      # directly avoids the broken `sdkmanager tools` call of setup-android v3.
+      - name: Locate pre-installed Android SDK
+        run: |
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          ls /usr/local/lib/android/sdk/platforms
+          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null 2>&1 || true
 
       - name: Install Gradle 9.3.1 (repo has no wrapper)
         run: |
@@ -57,6 +62,11 @@ jobs:
             -keyalg RSA -keysize 2048 -validity 10000 -alias androiddebugkey \
             -storepass android -keypass android \
             -dname "CN=Android Debug, OU=CI, O=CI, L=CI, S=CI, C=US"
+
+      # The secrets plugin reads .env from the app dir; the repo only ships
+      # .env.example, so create an empty one at build time (not committed).
+      - name: Create empty .env for the secrets gradle plugin
+        run: touch app/.env
 
       - name: Build release APK (assembleRelease)
         env:
