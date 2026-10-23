@@ -1,0 +1,6 @@
+{
+  "name": "Ista",
+  "description": "A gamified productivity app designed to prevent prolonged sitting by reminding users to stand up and tracking sitting/standing sessions with a virtual health garden.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
