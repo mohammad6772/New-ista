@@ -1,0 +1,94 @@
+name: Build and Release APK
+
+# This workflow builds the app WITHOUT modifying any project source file.
+# The missing signing material (my-upload-key.jks / debug.keystore) that
+# app/build.gradle.kts expects is generated on the runner at build time,
+# inside the checkout directory, and never committed to git.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. v1.0)"
+        required: false
+        default: "v1.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-apk
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build signed APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (untouched)
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        id: setup-android
+        uses: android-actions/setup-android@v3
+
+      - name: Install Gradle 9.3.1 (repo has no wrapper)
+        run: |
+          curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          unzip -q /tmp/gradle.zip -d /opt
+          echo "/opt/gradle-9.3.1/bin" >> "$GITHUB_PATH"
+
+      - name: Generate signing keystores required by app/build.gradle.kts
+        run: |
+          keytool -genkeypair -v -keystore my-upload-key.jks -storetype JKS \
+            -keyalg RSA -keysize 2048 -validity 10000 -alias upload \
+            -storepass changeit -keypass changeit \
+            -dname "CN=Ista, OU=CI, O=CI, L=CI, S=CI, C=US"
+          keytool -genkeypair -v -keystore debug.keystore -storetype PKCS12 \
+            -keyalg RSA -keysize 2048 -validity 10000 -alias androiddebugkey \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug, OU=CI, O=CI, L=CI, S=CI, C=US"
+
+      - name: Build release APK (assembleRelease)
+        env:
+          STORE_PASSWORD: changeit
+          KEY_PASSWORD: changeit
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Rename artifact
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk ista-v1.0-release.apk
+          ls -la *.apk
+
+      - name: Upload artifact to workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ista-release-apk
+          path: ista-v1.0-release.apk
+
+      - name: Create GitHub Release and attach APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Ista ${{ github.event.inputs.tag || github.ref_name }}
+          body: |
+            نسخه APK بازی «ایستا» (ساخته‌شده به‌صورت خودکار توسط GitHub Actions).
+            Built from commit ${{ github.sha }} without any source modification.
+            Note: signed with a CI-generated keystore — for Play Store publishing,
+            replace `my-upload-key.jks` with your own upload key.
+          files: ista-v1.0-release.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
